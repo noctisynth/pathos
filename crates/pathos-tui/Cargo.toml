@@ -1,0 +1,13 @@
+[package]
+name = "pathos-tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+crossterm = "0.29.0"
+pathos-core = { version = "0.1.0", path = "../pathos-core" }
+pathos-render = { version = "0.1.0", path = "../pathos-render" }
+ratatui = "0.30.2"
+
+[lints]
+workspace = true

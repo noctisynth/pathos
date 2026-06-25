@@ -1,0 +1,14 @@
+[package]
+name = "pathos-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+pathos-core = { version = "0.1.0", path = "../pathos-core" }
+pathos-parser = { version = "0.1.0", path = "../pathos-parser" }
+pathos-tui = { version = "0.1.0", path = "../pathos-tui" }
+tracing-subscriber = "0.3.23"
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "pathos-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+miette = "7.6.0"
+pathos-core = { version = "0.1.0", path = "../pathos-core" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_yaml = "0.9.34"
+toml = "0.8"
+winnow = "1.0.3"
+
+[lints]
+workspace = true
