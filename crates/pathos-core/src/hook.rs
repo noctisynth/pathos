@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use crate::error::CoreResult;
 use crate::passage::{HookDeclaration, PassageScript};
-use crate::script::ScriptEngine;
+use crate::scripts::ScriptSignal;
+use crate::scripts::ScriptEngine;
 use crate::state::StoryState;
 
 /// Registry of all hooks, indexed by event name.
@@ -37,20 +38,25 @@ impl HookRegistry {
 
     /// Trigger all handlers registered for `event`.
     ///
-    /// Returns the first error encountered, but runs all handlers regardless.
+    /// Returns the first navigation signal (if any), or the first error.
+    /// On navigation, subsequent handlers are skipped — the lifecycle
+    /// must yield control to the new passage immediately.
     pub fn trigger(
         &self,
         event: &str,
         state: &mut StoryState,
         script: &ScriptEngine,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<ScriptSignal> {
         let Some(handlers) = self.handlers.get(event) else {
-            return Ok(());
+            return Ok(ScriptSignal::None);
         };
         for h in handlers {
-            script.eval(state, &h.script.code, &h.script.lang)?;
+            let (_value, signal) = script.eval(state, &h.script.code, &h.script.lang)?;
+            if signal.is_navigation() {
+                return Ok(signal);
+            }
         }
-        Ok(())
+        Ok(ScriptSignal::None)
     }
 
     /// Return the number of registered handlers for `event`.

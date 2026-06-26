@@ -135,8 +135,8 @@ test result: ok. 20 passed; 0 failed; 0 ignored
 - [x] 修复 `split_into_passage_blocks` 前导空行处理
 - [x] 修复行内解析器 pos 传递
 - [x] 更新 `parse_mixed_content` 测试预期
-- [ ] 为无限循环场景增加回归测试（解析指令后验证 `pos` 正确前进）
-- [ ] 为 frontmatter 后跟空行的标题解析增加回归测试
+- [x] 为无限循环场景增加回归测试（解析指令后验证 `pos` 正确前进）
+- [x] 为 frontmatter 后跟空行的标题解析增加回归测试
  - [x] 为所有解析测试集成超时守卫（`with_timeout`，默认 10 秒上限）
  - [x] 测试套件运行时采用 `--test-threads=1` 避免竞争导致的内存压力
  - [x] 集成测试使用常规字符串（非 raw string），避免 `\u{2192}` 在 raw string 中不被解释的问题

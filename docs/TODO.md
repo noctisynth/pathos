@@ -11,33 +11,35 @@
 - [x] `pathos-core`：`NarrativeRuntime` 结构体 + 基础叙事执行循环（`step()` / `submit_input()` / `feed_stream_token()` / `end_stream()`）
 - [x] `pathos-core`：状态管理（`Value` 类型、路径访问、变更追踪 `StateChange`、`Global`/`Temp` scope）
 - [x] `pathos-core`：表达式求值器（字面量、运算符、函数调用 `random()` / `has_tag()`）
-- [x] `pathos-core`：单元测试 51 个（`StoryState`、`Value`、`Expression` 全覆盖）
 - [x] `pathos-parser`：多格式解析框架（`FormatParser` trait + `FormatRegistry` 按扩展名自动分发；TOML 格式完整实现含测试）
 - [x] `pathos-parser`：`.pathos` 格式四遍解析（P1 分段 → P2 块解析 → P3 行内解析 → P4 语义分析）
 - [x] `pathos-parser`：`@hook:` directive + fenced code block（含 language tag）解析
 - [x] `pathos-parser`：`{if:}`、`{ai:}`、`{ai-stream:}`、`{ai-cached:}`、`{state:}`、`{display:}`、`{set:}` 行内指令解析
 - [x] `pathos-parser`：`[[link]]` 链接解析（含 `->` 和 `→` 两种箭头写法）
-- [x] `pathos-parser`：20 个测试全部通过（含 inline、pathos、toml 格式 + 诊断验证）
 - [x] `pathos-render`：`RenderBackend` trait 定义 + `MockBackend` 实现
 - [x] `pathos-tui`：Ratatui 终端渲染器（`TuiBackend` 实现 `RenderBackend`，含完整事件循环）
 - [x] `pathos-cli`：`pathos run`（交互式运行）+ `pathos check`（静态诊断检查）
 - [x] 集成测试：6 个测试覆盖解析 + 运行时执行 + 诊断验证（含 3 秒超时守卫）
-- [x] Bug 修复：前导空行导致标题丢失问题 + 行内解析器 pos=0 无限循环问题
+- [x] Bug 修复：前导空行导致标题丢失 + 行内解析器 pos=0 无限循环
+- [x] 回归测试：pos 前进验证（4 个）、frontmatter 空行标题（2 个）——见 [incident-report-2026-06-26.md](./incident-report-2026-06-26.md)
 
 ### 测试总结
 
 | 测试套件 | 数量 | 状态 |
 |---|---|---|
-| `pathos-core` 单元测试 | 51 | ✅ 全过 |
-| `pathos-parser` 测试 | 20 | ✅ 全过 |
+| `pathos-core` 单元测试 | 58 | ✅ 全过 |
+| `pathos-parser` 测试 | 24 | ✅ 全过 |
 | `pathos-render` 测试 | 3 | ✅ 全过 |
 | 集成测试 | 6 | ✅ 全过（含超时守卫） |
-| 其它 crate 骨架测试 | 4 | ✅ 全过 |
+| 其它 crate 骨架测试 | 5 | ✅ 全过 |
 
 ## Phase 2: 脚本与 LLM（预计 3–4 周）
 
-- [ ] `pathos-core`：Rhai 脚本 API 注册（`state.get/set/inc/dec/delete`、`game.goto/back/restart/visited/count`、`random/random_float`、`ai.prompt`）
-- [ ] `pathos-core`：多语言脚本块解析完善（` ```rhai ` ` ```js ` ` ```lua ` → 对应 `ScriptLang`）
+- [x] `pathos-core`：Rhai 脚本 API 注册 — `state.get/set/inc/dec/delete`、`game_goto/restart/visited/count`、`random/random_float`、`Value` ↔ `Dynamic` 双向转换、`ScriptSignal` 导航中断协议（`NavInterrupt` 类型标记替代字符串匹配）
+- [x] `pathos-core`：`script.rs` → `scripts/` 模块拆分（`mod.rs` 公开接口 + `rhai_backend.rs` Rhai 专有实现，预留 `js.rs` / `lua.rs`）
+- [x] `pathos-core`：`ScriptSignal` 统一导航协议 — `game_goto` 立即中断脚本（`NavInterrupt`），`eval` → `CoreResult<(Value, ScriptSignal)>`，hooks 与 passage scripts 语义一致
+- [x] `pathos-core`：`run_step()` 递归跟踪导航链，`step()` 为唯一 `StepResult` 生产者
+- [ ] `pathos-parser`：多语言脚本块解析完善（P2 阶段校验 `ScriptLang`，产出未知语言诊断）
 - [ ] `pathos-llm`：LLM 调用库搭建（`LLMConfig` 类型 + OpenAI / Anthropic / Ollama provider）
 - [ ] `pathos-llm`：Mock provider（预置文本回放，默认启用）
 - [ ] `pathos-llm`：流式调用支持（逐 token 回调接口）

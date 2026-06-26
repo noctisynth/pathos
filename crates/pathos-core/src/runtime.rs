@@ -5,7 +5,7 @@ use crate::error::CoreResult;
 use crate::hook::HookRegistry;
 use crate::macros::{MacroHandler, MacroContext, MacroResult, builtin_macros};
 use crate::passage::PassageGraph;
-use crate::script::ScriptEngine;
+use crate::scripts::{ScriptEngine, ScriptSignal};
 use crate::state::StoryState;
 use crate::types::{Choice, RenderCommand, StepResult, UserInput};
 use crate::value::{Scope, Value};
@@ -73,7 +73,11 @@ impl NarrativeRuntime {
     }
 
     /// Navigate to a passage and execute it.
-    pub fn navigate_to(&mut self, target: &str) -> CoreResult<()> {
+    ///
+    /// Returns the first `ScriptSignal` emitted by hooks or scripts during
+    /// the navigation lifecycle.  `ScriptSignal::None` means execution
+    /// completed without interruption.
+    pub fn navigate_to(&mut self, target: &str) -> CoreResult<ScriptSignal> {
         // Validate target exists
         if self.graph.get(target).is_none() {
             return Err(crate::error::CoreError::PassageNotFound(target.into()));
@@ -82,9 +86,10 @@ impl NarrativeRuntime {
         // Clear temp variables from previous passage
         self.state.clear_temp();
 
-        // Trigger on_passage_end for the _previous_ passage (if any)
+        // 1. on_passage_end (previous passage)
         if self.current_passage.is_some() {
-            self.hooks.trigger("on_passage_end", &mut self.state, &self.script)?;
+            let sig = self.hooks.trigger("on_passage_end", &mut self.state, &self.script)?;
+            if sig.is_navigation() { return Ok(sig); }
         }
 
         self.current_passage = Some(target.to_string());
@@ -92,21 +97,24 @@ impl NarrativeRuntime {
         self.buffer.clear();
         self.ai_fallback = None;
 
-        // Trigger on_passage_start
-        self.hooks.trigger("on_passage_start", &mut self.state, &self.script)?;
+        // 2. on_passage_start
+        let sig = self.hooks.trigger("on_passage_start", &mut self.state, &self.script)?;
+        if sig.is_navigation() { return Ok(sig); }
 
-        // Execute passage-level scripts (clone scripts to release graph borrow)
+        // 3. Passage-level scripts
         let scripts: Vec<_> = self.graph.get(target)
             .map(|n| n.scripts.clone())
             .unwrap_or_default();
         for s in &scripts {
-            self.script.eval(&mut self.state, &s.code, &s.lang)?;
+            let (_value, sig) = self.script.eval(&mut self.state, &s.code, &s.lang)?;
+            if sig.is_navigation() { return Ok(sig); }
         }
 
-        // Trigger on_passage_render
-        self.hooks.trigger("on_passage_render", &mut self.state, &self.script)?;
+        // 4. on_passage_render
+        let sig = self.hooks.trigger("on_passage_render", &mut self.state, &self.script)?;
+        if sig.is_navigation() { return Ok(sig); }
 
-        Ok(())
+        Ok(ScriptSignal::None)
     }
 
     /// Execute one step and return the signal for the backend.
@@ -117,12 +125,8 @@ impl NarrativeRuntime {
             Some(id) => id,
             None => {
                 // No passage loaded yet — navigate to start
-                let start = self.config.start.clone();
-                if let Err(e) = self.navigate_to(&start) {
-                    self.buffer.push(RenderCommand::Text(format!("Error: {}", e)));
-                    return StepResult::Render(std::mem::take(&mut self.buffer));
-                }
-                return self.step(); // recurse to render the first passage
+                self.run_step(&self.config.start.clone());
+                return self.step();
             }
         };
 
@@ -167,6 +171,22 @@ impl NarrativeRuntime {
         StepResult::Finished
     }
 
+    /// Drive a navigation to `target` and recursively follow any
+    /// `ScriptSignal::Goto` emitted during the lifecycle hooks.
+    /// Errors are buffered as render commands and surfaced on the next `step()`.
+    fn run_step(&mut self, target: &str) {
+        match self.navigate_to(target) {
+            Ok(ScriptSignal::Goto(next)) => return self.run_step(&next),
+            Err(e) => {
+                self.buffer.clear();
+                self.buffer.push(RenderCommand::Text(format!("Error: {e}")));
+                return;
+            }
+            _ => {}
+        }
+        // Reached a stable passage — step() will pick up the render next.
+    }
+
     /// Feed a user input back into the engine after a pause.
     pub fn submit_input(&mut self, input: UserInput) {
         match input {
@@ -174,10 +194,7 @@ impl NarrativeRuntime {
                 if let Some(choice) = self.pending_choices.get(idx) {
                     let target = choice.target.clone();
                     self.pending_choices.clear();
-                    if let Err(e) = self.navigate_to(&target) {
-                        self.buffer.clear();
-                        self.buffer.push(RenderCommand::Text(format!("Error: {}", e)));
-                    }
+                    self.run_step(&target);
                 }
             }
             UserInput::Text(text) => {
