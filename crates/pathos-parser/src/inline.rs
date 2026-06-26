@@ -413,4 +413,30 @@ mod tests {
         assert!(matches!(nodes[1], ContentNode::Link { .. }));
         assert!(matches!(nodes[2], ContentNode::Text(ref s) if s == " now."));
     }
+
+    /// Regression test for infinite-loop bug: verify that parsing consecutive
+    /// inline directives properly advances `pos` past each closing `}`, so the
+    /// parser does not re-scan the same directive forever.
+    #[test]
+    fn regression_pos_advances_past_directive() {
+        // Two directives separated by whitespace — pos must advance past the
+        // first to reach the second.
+        let (nodes, diags) = parse_inline("{state: hp} and {display: room}");
+        assert!(diags.is_empty());
+        assert_eq!(nodes.len(), 3);
+        assert!(matches!(nodes[0], ContentNode::StateInterp { .. }));
+        assert!(matches!(nodes[1], ContentNode::Text(ref s) if s == " and "));
+        assert!(matches!(nodes[2], ContentNode::Display { .. }));
+    }
+
+    /// Two adjacent directives with no whitespace between them; this stresses
+    /// the `pos` boundary where `{` is immediately after `}`.
+    #[test]
+    fn regression_pos_adjacent_directives() {
+        let (nodes, diags) = parse_inline("{state: hp}{display: room}");
+        assert!(diags.is_empty());
+        assert_eq!(nodes.len(), 2);
+        assert!(matches!(nodes[0], ContentNode::StateInterp { .. }));
+        assert!(matches!(nodes[1], ContentNode::Display { .. }));
+    }
 }

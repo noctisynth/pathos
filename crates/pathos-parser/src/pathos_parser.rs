@@ -424,4 +424,41 @@ start: intro
         assert!(!warnings.is_empty());
         assert!(warnings.iter().any(|d| d.message.contains("nowhere")));
     }
+
+    /// Regression test: frontmatter followed by a blank line must not
+    /// swallow the first passage heading.
+    #[test]
+    fn regression_frontmatter_blank_line_before_heading() {
+        let src = "\
+---
+title: Blank Line Test
+start: intro
+---
+
+# intro
+Hello.
+";
+        let output = PathosParser.parse(src);
+        let intro = output.graph.get("intro").expect("passage 'intro' should exist");
+        assert_eq!(intro.id, "intro");
+        assert!(intro.body.iter().any(|n| matches!(n, ContentNode::Text(s) if s.trim() == "Hello.")));
+    }
+
+    /// Variant: two blank lines before the heading.
+    #[test]
+    fn regression_frontmatter_two_blank_lines_before_heading() {
+        let src = "\
+---
+title: Two Blanks
+start: start
+---
+
+
+# start
+Begin.
+";
+        let output = PathosParser.parse(src);
+        let start = output.graph.get("start").expect("passage 'start' should exist");
+        assert_eq!(start.id, "start");
+    }
 }
