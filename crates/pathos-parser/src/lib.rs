@@ -5,6 +5,7 @@
 //! Each format is implemented as a `FormatParser` and auto-dispatched by file extension.
 
 pub mod format;
+pub mod expression;
 pub mod inline;
 pub mod toml_parser;
 pub mod pathos_parser;

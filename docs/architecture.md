@@ -243,10 +243,10 @@ save_slots: 10
 
 # mushroom_path {forest, exploration}
 
-```rhai
+\`\`\`rhai
 let wisdom = state.get("wisdom").unwrap_or(0);
 state.set("wisdom", wisdom + 1);
-```
+\`\`\`
 
 蘑菇闪烁着柔和的蓝光。你感到某种古老的智慧在心中苏醒。
 
@@ -274,11 +274,11 @@ state.set("wisdom", wisdom + 1);
 
 # init {system}
 @hook: on_story_init
-```rhai
+\`\`\`rhai
 state.set("wisdom", 0);
 state.set("courage", 0);
 state.set("has_torch", false);
-```
+\`\`\`
 
 ---
 ```
@@ -322,10 +322,10 @@ state.set("has_torch", false);
 ```pathos
 # damage_event {combat}
 @hook: on_player_damaged
-```rhai
+\`\`\`rhai
 let hp = state.get("player.hp").unwrap_or(100);
 state.set("player.hp", hp - 10);
-```
+\`\`\`
 
 你受到了 10 点伤害！当前 HP：{state: "player.hp"}
 ---
