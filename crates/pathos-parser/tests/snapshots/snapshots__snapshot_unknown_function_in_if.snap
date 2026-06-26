@@ -1,0 +1,54 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "UnknownFn",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Conditional {
+                        condition: Call {
+                            name: "foobar",
+                            args: [
+                                Literal(
+                                    Int(
+                                        1,
+                                    ),
+                                ),
+                            ],
+                        },
+                        then_branch: [
+                            Text(
+                                "\n  yes\n",
+                            ),
+                        ],
+                        else_branch: [],
+                    },
+                    Text(
+                        "\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [
+        Diagnostic {
+            severity: Warning,
+            message: "unknown function in expression: 'foobar'",
+            span: None,
+        },
+    ],
+}

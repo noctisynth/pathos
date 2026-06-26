@@ -1,0 +1,87 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "CondLink",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Link {
+                        label: "Enter the void",
+                        target: "void",
+                        enabled_if: Some(
+                            Call {
+                                name: "has_tag",
+                                args: [
+                                    Literal(
+                                        String(
+                                            "brave",
+                                        ),
+                                    ),
+                                ],
+                            },
+                        ),
+                    },
+                    Text(
+                        "\n",
+                    ),
+                    Link {
+                        label: "Go back",
+                        target: "back",
+                        enabled_if: None,
+                    },
+                    Text(
+                        "\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "void",
+                tags: [],
+                body: [
+                    Text(
+                        "It is dark.\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "back",
+                tags: [],
+                body: [
+                    Text(
+                        "You retreat.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [
+            PassageEdge {
+                from: "p1",
+                to: "void",
+                kind: Link,
+            },
+            PassageEdge {
+                from: "p1",
+                to: "back",
+                kind: Link,
+            },
+        ],
+    },
+    diagnostics: [],
+}

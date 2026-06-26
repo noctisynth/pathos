@@ -1,0 +1,47 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Unused",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Text(
+                        "Hello.\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "orphan",
+                tags: [],
+                body: [
+                    Text(
+                        "Nobody links here.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [
+        Diagnostic {
+            severity: Warning,
+            message: "passage 'orphan' is never referenced",
+            span: None,
+        },
+    ],
+}

@@ -1,0 +1,129 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Expr",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Conditional {
+                        condition: And(
+                            And(
+                                Call {
+                                    name: "visited",
+                                    args: [
+                                        Literal(
+                                            String(
+                                                "cave",
+                                            ),
+                                        ),
+                                    ],
+                                },
+                                Not(
+                                    Call {
+                                        name: "has_tag",
+                                        args: [
+                                            Literal(
+                                                String(
+                                                    "scared",
+                                                ),
+                                            ),
+                                        ],
+                                    },
+                                ),
+                            ),
+                            Lt(
+                                Call {
+                                    name: "count",
+                                    args: [
+                                        Literal(
+                                            String(
+                                                "cave",
+                                            ),
+                                        ),
+                                    ],
+                                },
+                                Literal(
+                                    Int(
+                                        3,
+                                    ),
+                                ),
+                            ),
+                        ),
+                        then_branch: [
+                            Text(
+                                "\n  Welcome back.\n",
+                            ),
+                        ],
+                        else_branch: [],
+                    },
+                    Text(
+                        "\n\n",
+                    ),
+                    Link {
+                        label: "Go deeper",
+                        target: "deep",
+                        enabled_if: Some(
+                            Gt(
+                                Call {
+                                    name: "random",
+                                    args: [
+                                        Literal(
+                                            Int(
+                                                1,
+                                            ),
+                                        ),
+                                        Literal(
+                                            Int(
+                                                10,
+                                            ),
+                                        ),
+                                    ],
+                                },
+                                Literal(
+                                    Int(
+                                        5,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    },
+                    Text(
+                        "\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "deep",
+                tags: [],
+                body: [
+                    Text(
+                        "The depths.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [
+            PassageEdge {
+                from: "p1",
+                to: "deep",
+                kind: Link,
+            },
+        ],
+    },
+    diagnostics: [],
+}

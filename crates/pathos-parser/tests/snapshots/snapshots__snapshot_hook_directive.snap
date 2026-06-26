@@ -1,0 +1,63 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Hooks",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Text(
+                        "\nWelcome!\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [
+                    HookDeclaration {
+                        event: "on_passage_start",
+                        script: PassageScript {
+                            lang: "rhai",
+                            code: "state.set(\"entered\", true);",
+                        },
+                    },
+                ],
+            },
+            PassageNode {
+                id: "p2",
+                tags: [],
+                body: [
+                    Text(
+                        "\nGoodbye.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [
+                    HookDeclaration {
+                        event: "on_passage_end",
+                        script: PassageScript {
+                            lang: "rhai",
+                            code: "state.set(\"left\", true);",
+                        },
+                    },
+                ],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [
+        Diagnostic {
+            severity: Warning,
+            message: "passage 'p2' is never referenced",
+            span: None,
+        },
+    ],
+}

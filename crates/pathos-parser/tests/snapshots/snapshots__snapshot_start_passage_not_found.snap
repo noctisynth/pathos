@@ -1,0 +1,41 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "BadStart",
+        author: "",
+        start: "nowhere",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "intro",
+                tags: [],
+                body: [
+                    Text(
+                        "Hello.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [
+        Diagnostic {
+            severity: Error,
+            message: "start passage 'nowhere' not found",
+            span: None,
+        },
+        Diagnostic {
+            severity: Warning,
+            message: "passage 'intro' is never referenced",
+            span: None,
+        },
+    ],
+}

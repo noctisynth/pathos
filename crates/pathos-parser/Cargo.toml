@@ -13,3 +13,6 @@ winnow = "1.0.3"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+insta = "1.48.0"

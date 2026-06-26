@@ -1,0 +1,53 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Display",
+        author: "",
+        start: "main",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "main",
+                tags: [],
+                body: [
+                    Text(
+                        "Hello. ",
+                    ),
+                    Display {
+                        passage: "sidebar",
+                    },
+                    Text(
+                        "\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "sidebar",
+                tags: [],
+                body: [
+                    Text(
+                        "This is a sidebar.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [
+            PassageEdge {
+                from: "main",
+                to: "sidebar",
+                kind: Display,
+            },
+        ],
+    },
+    diagnostics: [],
+}

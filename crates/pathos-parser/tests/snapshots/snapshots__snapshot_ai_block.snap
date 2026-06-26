@@ -1,0 +1,45 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "AI",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    AIBlock {
+                        mode: Blocking,
+                        prompt: "Describe the room",
+                        fallback: "You see a room.",
+                        cache_key: None,
+                    },
+                    Text(
+                        "\n",
+                    ),
+                    AIBlock {
+                        mode: Streaming,
+                        prompt: "Narrate the journey",
+                        fallback: "The path winds on.",
+                        cache_key: None,
+                    },
+                    Text(
+                        "\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [],
+}

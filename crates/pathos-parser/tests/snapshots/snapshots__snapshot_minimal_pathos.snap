@@ -1,0 +1,59 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Test Story",
+        author: "Author",
+        start: "intro",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "intro",
+                tags: [
+                    "opening",
+                ],
+                body: [
+                    Text(
+                        "Welcome to the story.\n\n",
+                    ),
+                    Link {
+                        label: "Go to room",
+                        target: "room",
+                        enabled_if: None,
+                    },
+                    Text(
+                        "\n\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+            PassageNode {
+                id: "room",
+                tags: [
+                    "safe",
+                ],
+                body: [
+                    Text(
+                        "You are in a room. The door is locked.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [
+            PassageEdge {
+                from: "intro",
+                to: "room",
+                kind: Link,
+            },
+        ],
+    },
+    diagnostics: [],
+}

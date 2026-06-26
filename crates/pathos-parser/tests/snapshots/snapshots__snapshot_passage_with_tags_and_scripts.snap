@@ -1,0 +1,55 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Tagged",
+        author: "",
+        start: "start",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "start",
+                tags: [
+                    "opening",
+                    "safe",
+                ],
+                body: [
+                    Text(
+                        "Before you stands a door.\n\n\n",
+                    ),
+                ],
+                scripts: [
+                    PassageScript {
+                        lang: "rhai",
+                        code: "state.set(\"door_locked\", true);",
+                    },
+                ],
+                hooks: [],
+            },
+            PassageNode {
+                id: "end",
+                tags: [],
+                body: [
+                    Text(
+                        "The end.\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [
+        Diagnostic {
+            severity: Warning,
+            message: "passage 'end' is never referenced",
+            span: None,
+        },
+    ],
+}

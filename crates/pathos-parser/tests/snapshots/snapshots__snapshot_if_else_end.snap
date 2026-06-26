@@ -1,0 +1,52 @@
+---
+source: crates/pathos-parser/tests/snapshots.rs
+expression: parse(src)
+---
+ParseOutput {
+    config: StoryConfig {
+        title: "Conditional",
+        author: "",
+        start: "p1",
+        version: "0.1.0",
+        save_slots: 10,
+    },
+    graph: PassageGraph {
+        nodes: [
+            PassageNode {
+                id: "p1",
+                tags: [],
+                body: [
+                    Conditional {
+                        condition: Call {
+                            name: "visited",
+                            args: [
+                                Literal(
+                                    String(
+                                        "cave",
+                                    ),
+                                ),
+                            ],
+                        },
+                        then_branch: [
+                            Text(
+                                "\n  You've been to the cave before.\n",
+                            ),
+                        ],
+                        else_branch: [
+                            Text(
+                                "\n  A dark opening looms ahead.\n",
+                            ),
+                        ],
+                    },
+                    Text(
+                        "\n",
+                    ),
+                ],
+                scripts: [],
+                hooks: [],
+            },
+        ],
+        edges: [],
+    },
+    diagnostics: [],
+}
