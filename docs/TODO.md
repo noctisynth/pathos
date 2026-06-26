@@ -39,7 +39,7 @@
 - [x] `pathos-core`：`script.rs` → `scripts/` 模块拆分（`mod.rs` 公开接口 + `rhai_backend.rs` Rhai 专有实现，预留 `js.rs` / `lua.rs`）
 - [x] `pathos-core`：`ScriptSignal` 统一导航协议 — `game_goto` 立即中断脚本（`NavInterrupt`），`eval` → `CoreResult<(Value, ScriptSignal)>`，hooks 与 passage scripts 语义一致
 - [x] `pathos-core`：`run_step()` 递归跟踪导航链，`step()` 为唯一 `StepResult` 生产者
-- [ ] `pathos-parser`：多语言脚本块解析完善（P2 阶段校验 `ScriptLang`，产出未知语言诊断）
+- [x] `pathos-parser`：多语言脚本块解析完善（P2 阶段校验 `ScriptLang`，产出未知语言诊断）
 - [ ] `pathos-llm`：LLM 调用库搭建（`LLMConfig` 类型 + OpenAI / Anthropic / Ollama provider）
 - [ ] `pathos-llm`：Mock provider（预置文本回放，默认启用）
 - [ ] `pathos-llm`：流式调用支持（逐 token 回调接口）

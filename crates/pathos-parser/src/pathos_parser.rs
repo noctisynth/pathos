@@ -6,7 +6,7 @@
 //!   P3 — Parse inline elements (links, macros, AI blocks, state interpolation)
 //!   P4 — Semantic analysis (build graph edges, validate references)
 
-use pathos_core::{HookDeclaration, PassageGraph, PassageNode, PassageScript, StoryConfig,
+use pathos_core::{HookDeclaration, PassageGraph, PassageNode, PassageScript, ScriptLang, StoryConfig,
 };
 use crate::format::{Diagnostic, FormatParser, ParseOutput, Severity};
 
@@ -233,6 +233,14 @@ fn parse_passage_block(block: &str) -> (PassageNode, Vec<Diagnostic>) {
             if i < remaining.len() && remaining[i].trim().starts_with("```") {
                 let info = remaining[i].trim().strip_prefix("```").unwrap_or("").trim();
                 let lang = if info.is_empty() { "rhai".to_string() } else { info.to_string() };
+                // P2: validate language tag against known ScriptLang variants
+                if ScriptLang::from_info_string(&lang).is_none() {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Warning,
+                        message: format!("unknown script language: '{}'", lang),
+                        span: None,
+                    });
+                }
                 i += 1;
                 let mut code_lines = Vec::new();
                 while i < remaining.len() && !remaining[i].trim().starts_with("```") {
@@ -252,6 +260,14 @@ fn parse_passage_block(block: &str) -> (PassageNode, Vec<Diagnostic>) {
         if line.trim().starts_with("```") {
             let info = line.trim().strip_prefix("```").unwrap_or("").trim();
             let lang = if info.is_empty() { "rhai".to_string() } else { info.to_string() };
+                // P2: validate language tag against known ScriptLang variants
+                if ScriptLang::from_info_string(&lang).is_none() {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Warning,
+                        message: format!("unknown script language: '{}'", lang),
+                        span: None,
+                    });
+                }
             i += 1;
             let mut code_lines = Vec::new();
             while i < remaining.len() && !remaining[i].trim().starts_with("```") {
@@ -461,4 +477,36 @@ Begin.
         let start = output.graph.get("start").expect("passage 'start' should exist");
         assert_eq!(start.id, "start");
     }
+
+    /// Unknown script language in fenced code block emits a Warning diagnostic.
+    #[test]
+    fn unknown_script_language_warning() {
+        let src = "---
+title: Test
+author: A
+start: intro
+---
+
+# intro
+```python
+x = 1
+```
+
+Hello.
+";
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert!(
+            warnings.iter().any(|d| d.message.contains("python")),
+            "expected warning about unknown script language 'python', got: {:?}",
+            warnings
+        );
+        // The script should still be parsed and stored (degraded gracefully)
+        let intro = output.graph.get("intro").unwrap();
+        assert_eq!(intro.scripts.len(), 1);
+        assert_eq!(intro.scripts[0].lang, "python");
+    }
+
 }
