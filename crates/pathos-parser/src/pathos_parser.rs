@@ -6,8 +6,9 @@
 //!   P3 — Parse inline elements (links, macros, AI blocks, state interpolation)
 //!   P4 — Semantic analysis (build graph edges, validate references)
 
-use pathos_core::{HookDeclaration, PassageGraph, PassageNode, PassageScript, ScriptLang, StoryConfig,
+use pathos_core::{ContentNode, HookDeclaration, PassageGraph, PassageNode, PassageScript, ScriptLang, StoryConfig,
 };
+use pathos_core::expression::Expression;
 use crate::format::{Diagnostic, FormatParser, ParseOutput, Severity};
 
 pub struct PathosParser;
@@ -48,7 +49,7 @@ impl FormatParser for PathosParser {
         let mut graph = PassageGraph { nodes, edges: Vec::new() };
         graph.rebuild_edges();
 
-        let p4_diags = semantic_analysis(&graph);
+        let p4_diags = semantic_analysis(&graph, &config);
         diagnostics.extend(p4_diags);
 
         ParseOutput { config, graph, diagnostics }
@@ -333,24 +334,183 @@ fn parse_passage_block(block: &str) -> (PassageNode, Vec<Diagnostic>) {
 
 // ── P4: Semantic analysis ────────────────────────────────────────────────
 
-fn semantic_analysis(graph: &PassageGraph) -> Vec<Diagnostic> {
+fn semantic_analysis(graph: &PassageGraph, config: &StoryConfig) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
+    let start_id = &config.start;
 
-    // Check for orphan link targets
+    // ── Collect all passage IDs reachable via links / display / edges ───
+    let mut referenced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    referenced.insert(start_id.as_str());
+
+    // Walk all content nodes recursively to collect references + validate
+    for node in &graph.nodes {
+        walk_content_for_semantics(
+            &node.body,
+            &node.id,
+            graph,
+            &mut diagnostics,
+            &mut referenced,
+        );
+    }
+
+    // Edge targets from links
     for edge in &graph.edges {
+        referenced.insert(edge.to.as_str());
         if graph.get(&edge.to).is_none() {
             diagnostics.push(Diagnostic {
                 severity: Severity::Warning,
-                message: format!("link target '{}' not found (from '{}')", edge.to, edge.from),
+                message: format!(
+                    "link target '{}' not found (from '{}')",
+                    edge.to, edge.from
+                ),
                 span: None,
             });
         }
     }
 
-    // Check for unused passages (no incoming edges, not start)
-    // (Only warn about non-tag-navigated passages)
+    // ── Unused passages (not start, not referenced by any link/display) ──
+    for node in &graph.nodes {
+        if node.id == *start_id {
+            continue;
+        }
+        if !referenced.contains(node.id.as_str()) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                message: format!("passage '{}' is never referenced", node.id),
+                span: None,
+            });
+        }
+    }
+
     diagnostics
 }
+
+/// Recursively walk content nodes for P4 semantic validation.
+fn walk_content_for_semantics<'a>(
+    nodes: &'a [ContentNode],
+    current_passage: &str,
+    graph: &PassageGraph,
+    diagnostics: &mut Vec<Diagnostic>,
+    referenced: &mut std::collections::HashSet<&'a str>,
+) {
+    for cn in nodes {
+        match cn {
+            ContentNode::Link { target, enabled_if, .. } => {
+                referenced.insert(target.as_str());
+                if graph.get(target).is_none() {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Warning,
+                        message: format!(
+                            "link target '{}' not found (from '{}')",
+                            target, current_passage
+                        ),
+                        span: None,
+                    });
+                }
+                if let Some(expr) = enabled_if {
+                    validate_expression(expr, diagnostics);
+                }
+            }
+            ContentNode::Display { passage } => {
+                referenced.insert(passage.as_str());
+                if graph.get(passage).is_none() {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Warning,
+                        message: format!(
+                            "display target '{}' not found (from '{}')",
+                            passage, current_passage
+                        ),
+                        span: None,
+                    });
+                }
+            }
+            ContentNode::Conditional { condition, then_branch, else_branch } => {
+                validate_expression(condition, diagnostics);
+                walk_content_for_semantics(then_branch, current_passage, graph, diagnostics, referenced);
+                walk_content_for_semantics(else_branch, current_passage, graph, diagnostics, referenced);
+            }
+            ContentNode::Macro { args, .. } => {
+                // Macros may contain inline links / display — but macro args
+                // are KeyValue / Positional, not ContentNode.  Skip for now.
+                let _ = args;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Validate a single expression AST (check function call names).
+fn validate_expression(expr: &Expression, diagnostics: &mut Vec<Diagnostic>) {
+    match expr {
+        Expression::Call { name, args } => {
+            let known = matches!(
+                name.as_str(),
+                "random" | "has_tag" | "visited" | "count"
+            );
+            if !known {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    message: format!("unknown function in expression: '{}'", name),
+                    span: None,
+                });
+            }
+            // Validate arg count for known functions
+            match name.as_str() {
+                "has_tag" | "visited" | "count" => {
+                    if args.len() != 1 {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            message: format!(
+                                "'{}' expects 1 argument, got {}", name, args.len()
+                            ),
+                            span: None,
+                        });
+                    }
+                }
+                "random" => {
+                    if args.len() > 2 {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            message: format!(
+                                "'random' expects 0-2 arguments, got {}", args.len()
+                            ),
+                            span: None,
+                        });
+                    }
+                }
+                _ => {}
+            }
+            // Recursively validate sub-expressions in arguments
+            for arg in args {
+                validate_expression(arg, diagnostics);
+            }
+        }
+        Expression::Not(inner) => {
+            validate_expression(inner, diagnostics);
+        }
+        Expression::StateVar(_) => {
+            // StateVar is runtime — no validation needed at P4
+        }
+        Expression::And(lhs, rhs)
+        | Expression::Or(lhs, rhs)
+        | Expression::Eq(lhs, rhs)
+        | Expression::NotEq(lhs, rhs)
+        | Expression::Lt(lhs, rhs)
+        | Expression::Lte(lhs, rhs)
+        | Expression::Gt(lhs, rhs)
+        | Expression::Gte(lhs, rhs)
+        | Expression::Add(lhs, rhs)
+        | Expression::Sub(lhs, rhs)
+        | Expression::Mul(lhs, rhs)
+        | Expression::Div(lhs, rhs) => {
+            validate_expression(lhs, diagnostics);
+            validate_expression(rhs, diagnostics);
+        }
+        Expression::Literal(_) => {}
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -619,6 +779,133 @@ still hidden --> keep this too
         assert!(body_text.contains("keep this"), "expected 'keep this' in: {}", body_text);
         assert!(body_text.contains("keep this too"), "expected 'keep this too' in: {}", body_text);
         assert!(!body_text.contains("should be hidden"), "unexpected hidden text: {}", body_text);
+    }
+
+
+
+
+    // ── P4 semantic analysis tests ─────────────────────────────────
+
+    #[test]
+    fn p4_warns_unknown_function() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+{if: foobar(1)}
+  yes
+{else}
+  no
+{end}
+";
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| matches!(d.severity, Severity::Warning))
+            .collect();
+        assert!(
+            warnings.iter().any(|d| d.message.contains("unknown function")),
+            "expected unknown function warning, got: {:?}",
+            warnings.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p4_warns_display_target_not_found() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+{display: nonexistent}
+
+# p2
+Hello.
+";
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| matches!(d.severity, Severity::Warning))
+            .collect();
+        assert!(
+            warnings.iter().any(|d| d.message.contains("display target") && d.message.contains("nonexistent")),
+            "expected display target warning, got: {:?}",
+            warnings.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p4_warns_link_target_not_found() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+[[Go -> nowhere]]
+";
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| matches!(d.severity, Severity::Warning))
+            .collect();
+        assert!(
+            warnings.iter().any(|d| d.message.contains("link target") && d.message.contains("nowhere")),
+            "expected link target warning, got: {:?}",
+            warnings.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p4_warns_unused_passage() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+Hello.
+
+# orphan
+Nobody links here.
+";
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| matches!(d.severity, Severity::Warning))
+            .collect();
+        assert!(
+            warnings.iter().any(|d| d.message.contains("never referenced") && d.message.contains("orphan")),
+            "expected unused passage warning, got: {:?}",
+            warnings.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p4_no_warning_for_valid_if_expression() {
+        let src = concat!(
+            "---\n",
+            "title: T\n",
+            "start: p1\n",
+            "---\n",
+            "\n",
+            "# p1\n",
+            "{if: visited(\"cave\") && has_tag(\"dark\")}\n",
+            "  You remember the cave.\n",
+            "{end}\n",
+        );
+        let output = PathosParser.parse(src);
+        let warnings: Vec<_> = output.diagnostics.iter()
+            .filter(|d| matches!(d.severity, Severity::Warning))
+            .collect();
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings for valid expression, got: {:?}",
+            warnings.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
     }
 
 
