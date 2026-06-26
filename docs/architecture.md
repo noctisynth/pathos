@@ -528,13 +528,20 @@ pub enum HookEvent {
 
 ### 5.5 表达式引擎
 
-内建简易表达式求值器：
+
+```rust
+pub struct EvalContext'a {
+    pub state: &x27a StoryState,
+    pub graph: Option<&x27a PassageGraph>,  // 用于 has_tag() 查询 passage tags
+}
+```
+内建简易表达式求值器，由 `EvalContext` 统一封装运行时上下文：
 - 字面量：数字、字符串、布尔、null
 - 运算符：`+`, `-`, `*`, `/`, `%`, `&&`, `||`, `!`, `==`, `!=`, `<`, `>`, `<=`, `>=`
 - 状态访问：`state.get("path")` — 脚本中使用；`$path` — **仅在 `{if:}` 条件表达式中可用**的语法糖
 - 函数调用：`random(min, max)`, `has_tag("tag")`, `visited("passage")`, `count("tag")`
 
-表达式求值器在 `pathos-parser` 中作为子解析器实现，在 `pathos-core` 中执行。保证 `.pathos` 和脚本引擎使用同一套表达式语义。
+表达式 AST 由 `pathos-parser` 的 `expression.rs` 解析（winnow 组合子），由 `pathos-core` 的 `Expression::eval(&self, ctx: &EvalContext<'_>)` 执行。`visited` 和 `count` 从 `StoryState::visit_counts` 读取；`has_tag` 需要 `EvalContext.graph` 上下文。
 
 
 ## 6. 脚本与扩展

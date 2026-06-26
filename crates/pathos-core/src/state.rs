@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use crate::config::PassageId;
 use crate::value::{Scope, Value};
 
@@ -15,6 +16,13 @@ pub struct StoryState {
     /// Story-level metadata from `.pathos` frontmatter (title, author, version,
     /// save_slots).  Scripts have read-only access.
     pub metadata: Value,
+
+    /// Visit counts for each passage (runtime state).  Used by `visited()` and `count()`.
+    #[serde(default)]
+    pub visit_counts: HashMap<PassageId, u32>,
+    /// Current passage being rendered (runtime state).  Used by `has_tag()`.
+    #[serde(skip, default)]
+    pub current_passage: Option<PassageId>,
 }
 
 impl StoryState {
@@ -91,6 +99,38 @@ impl StoryState {
     /// Clear all Temp-scoped variables (called on passage navigation).
     pub fn clear_temp(&mut self) {
         self.temp = Value::Null;
+    }
+
+    /// Increment the visit count for a passage.
+    pub fn mark_visited(&mut self, passage_id: &PassageId) {
+        let count = self.visit_counts.entry(passage_id.clone()).or_insert(0);
+        *count += 1;
+    }
+
+    /// Check if a passage has been visited at least once.
+    pub fn is_visited(&self, passage_id: &PassageId) -> bool {
+        self.visit_counts.get(passage_id).copied().unwrap_or(0) > 0
+    }
+
+    /// Get the number of times a passage has been visited.
+    pub fn visit_count_of(&self, passage_id: &PassageId) -> u32 {
+        self.visit_counts.get(passage_id).copied().unwrap_or(0)
+    }
+
+    /// Check if the current passage has the given tag (requires passage graph).
+    /// Call `eval` with `graph: Some(&graph)` for this to work.
+    pub fn has_tag(&self, tag: &str, graph: Option<&crate::passage::PassageGraph>) -> bool {
+        let graph = match graph {
+            Some(g) => g,
+            None => return false,
+        };
+        let current = match &self.current_passage {
+            Some(p) => p,
+            None => return false,
+        };
+        graph.get(current)
+            .map(|node| node.tags.iter().any(|t| t == tag))
+            .unwrap_or(false)
     }
 }
 
@@ -233,6 +273,8 @@ impl Default for StoryState {
             globals: Value::Object(std::collections::HashMap::new()),
             temp: Value::Object(std::collections::HashMap::new()),
             metadata: Value::Null,
+            visit_counts: HashMap::new(),
+            current_passage: None,
         }
     }
 }

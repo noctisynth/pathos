@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crate::config::{PassageId, StoryConfig};
 use crate::content::ContentNode;
 use crate::error::CoreResult;
+use crate::expression::EvalContext;
 use crate::hook::HookRegistry;
 use crate::macros::{MacroHandler, MacroContext, MacroResult, builtin_macros};
 use crate::passage::PassageGraph;
@@ -93,6 +94,8 @@ impl NarrativeRuntime {
         }
 
         self.current_passage = Some(target.to_string());
+        self.state.current_passage = Some(target.to_string());
+        self.state.mark_visited(&target.to_string());
         self.pending_choices.clear();
         self.buffer.clear();
         self.ai_fallback = None;
@@ -141,6 +144,9 @@ impl NarrativeRuntime {
                 return StepResult::Render(std::mem::take(&mut self.buffer));
             }
         };
+
+        // Sync state.current_passage for expression evaluator (has_tag, etc.)
+        self.state.current_passage = self.current_passage.clone();
 
         // Walk the content AST and produce render commands + collect choices
         self.walk_content(&body);
@@ -238,7 +244,7 @@ impl NarrativeRuntime {
                     let enabled = enabled_if
                         .as_ref()
                         .map(|expr| {
-                            expr.eval(&self.state)
+                            expr.eval(&EvalContext::with_graph(&self.state, &self.graph))
                                 .ok()
                                 .and_then(|v| v.as_bool())
                                 .unwrap_or(true)
@@ -259,7 +265,7 @@ impl NarrativeRuntime {
                     }
                 }
                 ContentNode::Conditional { condition, then_branch, else_branch } => {
-                    let result = condition.eval(&self.state)
+                    let result = condition.eval(&EvalContext::with_graph(&self.state, &self.graph))
                         .ok()
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);

@@ -221,6 +221,7 @@ fn parse_passage_block(block: &str) -> (PassageNode, Vec<Diagnostic>) {
     let remaining: Vec<&str> = lines.collect();
     let mut i = 0;
     let mut body_text = String::new();
+    let mut in_block_comment = false;
 
     while i < remaining.len() {
         let line = remaining[i];
@@ -281,9 +282,45 @@ fn parse_passage_block(block: &str) -> (PassageNode, Vec<Diagnostic>) {
             continue;
         }
 
-        // Regular body line
-        body_text.push_str(line);
-        body_text.push('\n');
+        // Regular body line — strip line and block comments
+        if in_block_comment {
+            if let Some(end) = line.find("-->") {
+                in_block_comment = false;
+                let after = &line[end + 3..];
+                if !after.is_empty() {
+                    body_text.push_str(after);
+                    body_text.push('\n');
+                }
+            }
+        } else {
+            let slash_pos = line.find("//");
+            let block_open = line.find("<!--");
+
+            match (slash_pos, block_open) {
+                (Some(sp), Some(bp)) if sp < bp => {
+                    body_text.push_str(&line[..sp]);
+                    body_text.push('\n');
+                }
+                (_, Some(bp)) => {
+                    body_text.push_str(&line[..bp]);
+                    let rest = &line[bp + 4..];
+                    if let Some(end) = rest.find("-->") {
+                        body_text.push_str(&rest[end + 3..]);
+                    } else {
+                        in_block_comment = true;
+                    }
+                    body_text.push('\n');
+                }
+                (Some(sp), None) => {
+                    body_text.push_str(&line[..sp]);
+                    body_text.push('\n');
+                }
+                (None, None) => {
+                    body_text.push_str(line);
+                    body_text.push('\n');
+                }
+            }
+        }
         i += 1;
     }
 
@@ -508,5 +545,81 @@ Hello.
         assert_eq!(intro.scripts.len(), 1);
         assert_eq!(intro.scripts[0].lang, "python");
     }
+
+
+    // ── Comment stripping tests ────────────────────────────────────
+
+    #[test]
+    fn strip_double_slash_line_comment() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+visible text // this is a comment
+more text
+";
+        let output = PathosParser.parse(src);
+        let p1 = output.graph.get("p1").unwrap();
+        assert!(!p1.body.iter().any(|n| {
+            matches!(n, ContentNode::Text(s) if s.contains("this is a comment"))
+        }));
+        assert!(p1.body.iter().any(|n| {
+            matches!(n, ContentNode::Text(s) if s.contains("visible text"))
+        }));
+    }
+
+    #[test]
+    fn strip_block_comment() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+before <!-- hidden block --> after
+";
+        let output = PathosParser.parse(src);
+        let p1 = output.graph.get("p1").unwrap();
+        let body_text: String = p1.body.iter().filter_map(|n| {
+            match n {
+                ContentNode::Text(s) => Some(s.as_str()),
+                _ => None,
+            }
+        }).collect::<Vec<_>>().join(" ");
+        assert!(body_text.contains("before"), "expected 'before' in: {}", body_text);
+        assert!(body_text.contains("after"), "expected 'after' in: {}", body_text);
+        assert!(!body_text.contains("hidden block"), "unexpected 'hidden block' in: {}", body_text);
+    }
+
+    #[test]
+    fn strip_multiline_block_comment() {
+        let src = "\
+---
+title: T
+start: p1
+---
+
+# p1
+keep this <!-- start of hidden
+this should be hidden
+still hidden --> keep this too
+";
+        let output = PathosParser.parse(src);
+        let p1 = output.graph.get("p1").unwrap();
+        let body_text: String = p1.body.iter().filter_map(|n| {
+            match n {
+                ContentNode::Text(s) => Some(s.as_str()),
+                _ => None,
+            }
+        }).collect::<Vec<_>>().join(" ");
+        assert!(body_text.contains("keep this"), "expected 'keep this' in: {}", body_text);
+        assert!(body_text.contains("keep this too"), "expected 'keep this too' in: {}", body_text);
+        assert!(!body_text.contains("should be hidden"), "unexpected hidden text: {}", body_text);
+    }
+
 
 }

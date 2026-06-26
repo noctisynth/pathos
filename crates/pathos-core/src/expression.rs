@@ -1,8 +1,29 @@
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use crate::error::CoreResult;
+use crate::passage::PassageGraph;
 use crate::state::StoryState;
 use crate::value::{Scope, Value};
+/// Context passed to `Expression::eval`, bundling runtime state needed
+/// for function calls like `has_tag()`, `visited()`, and `count()`.
+#[derive(Debug, Clone)]
+pub struct EvalContext<'a> {
+    pub state: &'a StoryState,
+    pub graph: Option<&'a PassageGraph>,
+}
+
+impl<'a> EvalContext<'a> {
+    /// Create a minimal context with no passage graph (for tests / scripts).
+    pub fn new(state: &'a StoryState) -> Self {
+        Self { state, graph: None }
+    }
+
+    /// Create a context with a passage graph (for {if:} evaluation).
+    pub fn with_graph(state: &'a StoryState, graph: &'a PassageGraph) -> Self {
+        Self { state, graph: Some(graph) }
+    }
+}
+
 
 /// A boolean or arithmetic expression (parsed from `{if: expr}` and script code).
 ///
@@ -35,11 +56,12 @@ pub enum Expression {
 
 impl Expression {
     /// Evaluate this expression against the current state.
-    pub fn eval(&self, state: &StoryState) -> CoreResult<Value> {
+    /// Evaluate this expression against the given runtime context.
+    pub fn eval(&self, ctx: &EvalContext<'_>) -> CoreResult<Value> {
         match self {
             Expression::Literal(val) => Ok(val.clone()),
             Expression::StateVar(path) => {
-                state
+                ctx.state
                     .get(path, Scope::Global)
                     .cloned()
                     .ok_or_else(|| {
@@ -49,64 +71,64 @@ impl Expression {
                     })
             }
             Expression::Not(inner) => {
-                let v = inner.eval(state)?.as_bool().unwrap_or(false);
+                let v = inner.eval(ctx)?.as_bool().unwrap_or(false);
                 Ok(Value::Bool(!v))
             }
             Expression::And(lhs, rhs) => {
-                let a = lhs.eval(state)?.as_bool().unwrap_or(false);
+                let a = lhs.eval(ctx)?.as_bool().unwrap_or(false);
                 if !a {
                     return Ok(Value::Bool(false));
                 }
-                let b = rhs.eval(state)?.as_bool().unwrap_or(false);
+                let b = rhs.eval(ctx)?.as_bool().unwrap_or(false);
                 Ok(Value::Bool(b))
             }
             Expression::Or(lhs, rhs) => {
-                let a = lhs.eval(state)?.as_bool().unwrap_or(false);
+                let a = lhs.eval(ctx)?.as_bool().unwrap_or(false);
                 if a {
                     return Ok(Value::Bool(true));
                 }
-                let b = rhs.eval(state)?.as_bool().unwrap_or(false);
+                let b = rhs.eval(ctx)?.as_bool().unwrap_or(false);
                 Ok(Value::Bool(b))
             }
             Expression::Eq(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 Ok(Value::Bool(a == b))
             }
             Expression::NotEq(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 Ok(Value::Bool(a != b))
             }
             Expression::Lt(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 Self::cmp_values(&a, &b, std::cmp::Ordering::Less)
             }
             Expression::Lte(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 match Self::cmp_values(&a, &b, std::cmp::Ordering::Less)? {
                     Value::Bool(true) => Ok(Value::Bool(true)),
                     _ => Self::cmp_values(&a, &b, std::cmp::Ordering::Equal),
                 }
             }
             Expression::Gt(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 Self::cmp_values(&a, &b, std::cmp::Ordering::Greater)
             }
             Expression::Gte(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 match Self::cmp_values(&a, &b, std::cmp::Ordering::Greater)? {
                     Value::Bool(true) => Ok(Value::Bool(true)),
                     _ => Self::cmp_values(&a, &b, std::cmp::Ordering::Equal),
                 }
             }
             Expression::Add(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 match (&a, &b) {
                     (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x + y)),
                     _ => {
@@ -117,8 +139,8 @@ impl Expression {
                 }
             }
             Expression::Sub(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 match (&a, &b) {
                     (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x - y)),
                     _ => {
@@ -129,8 +151,8 @@ impl Expression {
                 }
             }
             Expression::Mul(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 match (&a, &b) {
                     (Value::Int(x), Value::Int(y)) => Ok(Value::Int(x * y)),
                     _ => {
@@ -141,8 +163,8 @@ impl Expression {
                 }
             }
             Expression::Div(lhs, rhs) => {
-                let a = lhs.eval(state)?;
-                let b = rhs.eval(state)?;
+                let a = lhs.eval(ctx)?;
+                let b = rhs.eval(ctx)?;
                 let y = b.as_float().unwrap_or(0.0);
                 if y == 0.0 {
                     return Err(crate::error::CoreError::Expression(
@@ -160,15 +182,32 @@ impl Expression {
             Expression::Call { name, args } => {
                 match name.as_str() {
                     "random" => {
-                        let low = args.first().and_then(|a| a.eval(state).ok()).and_then(|v| v.as_int()).unwrap_or(0);
-                        let high = args.get(1).and_then(|a| a.eval(state).ok()).and_then(|v| v.as_int()).unwrap_or(1);
+                        let low = args.first().and_then(|a| a.eval(ctx).ok()).and_then(|v| v.as_int()).unwrap_or(0);
+                        let high = args.get(1).and_then(|a| a.eval(ctx).ok()).and_then(|v| v.as_int()).unwrap_or(1);
                         // Phase 1: deterministic midpoint (Phase 2 will use real RNG)
                         let result = if high > low { low + ((high - low) / 2) } else { low };
                         Ok(Value::Int(result))
                     }
                     "has_tag" => {
-                        // Stub — Phase 2 will implement passage tag checking
-                        Ok(Value::Bool(false))
+                        let tag = args.first()
+                            .and_then(|a| a.eval(ctx).ok())
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        Ok(Value::Bool(ctx.state.has_tag(&tag, ctx.graph)))
+                    }
+                    "visited" => {
+                        let passage = args.first()
+                            .and_then(|a| a.eval(ctx).ok())
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        Ok(Value::Bool(ctx.state.is_visited(&passage)))
+                    }
+                    "count" => {
+                        let passage = args.first()
+                            .and_then(|a| a.eval(ctx).ok())
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        Ok(Value::Int(ctx.state.visit_count_of(&passage) as i64))
                     }
                     _ => Err(crate::error::CoreError::Expression(format!(
                         "unknown function: {}", name
@@ -205,7 +244,8 @@ impl Expression {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::StoryState;
+    use crate::passage::PassageGraph;
+use crate::state::StoryState;
     use crate::value::{Scope, Value};
 
     fn state() -> StoryState {
@@ -220,13 +260,13 @@ mod tests {
     #[test]
     fn literal_int() {
         let e = Expression::Literal(Value::Int(42));
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(42));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(42));
     }
 
     #[test]
     fn literal_bool() {
         let e = Expression::Literal(Value::Bool(true));
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     // ── state var ────────────────────────────────────────────────────
@@ -234,13 +274,13 @@ mod tests {
     #[test]
     fn state_var() {
         let e = Expression::StateVar("hp".into());
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(10));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(10));
     }
 
     #[test]
     fn state_var_not_found() {
         let e = Expression::StateVar("nonexistent".into());
-        assert!(e.eval(&state()).is_err());
+        assert!(e.eval(&EvalContext::new(&state())).is_err());
     }
 
     // ── boolean ops ──────────────────────────────────────────────────
@@ -248,7 +288,7 @@ mod tests {
     #[test]
     fn not_true() {
         let e = Expression::Not(Box::new(Expression::Literal(Value::Bool(true))));
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(false));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(false));
     }
 
     #[test]
@@ -257,7 +297,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Bool(false))),
             Box::new(Expression::StateVar("nonexistent".into())),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(false));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(false));
     }
 
     #[test]
@@ -266,7 +306,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Bool(true))),
             Box::new(Expression::StateVar("nonexistent".into())),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     // ── arithmetic ───────────────────────────────────────────────────
@@ -277,7 +317,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(2))),
             Box::new(Expression::Literal(Value::Int(3))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(5));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(5));
     }
 
     #[test]
@@ -286,7 +326,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(10))),
             Box::new(Expression::Literal(Value::Int(3))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(7));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(7));
     }
 
     #[test]
@@ -295,7 +335,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(4))),
             Box::new(Expression::Literal(Value::Int(5))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(20));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(20));
     }
 
     #[test]
@@ -304,7 +344,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(10))),
             Box::new(Expression::Literal(Value::Int(2))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(5));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(5));
     }
 
     #[test]
@@ -313,7 +353,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(1))),
             Box::new(Expression::Literal(Value::Int(0))),
         );
-        assert!(e.eval(&state()).is_err());
+        assert!(e.eval(&EvalContext::new(&state())).is_err());
     }
 
     // ── mixed float/int arithmetic ───────────────────────────────────
@@ -324,7 +364,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(2))),
             Box::new(Expression::Literal(Value::float(3.5).unwrap())),
         );
-        let v = e.eval(&state()).unwrap();
+        let v = e.eval(&EvalContext::new(&state())).unwrap();
         assert!((v.as_float().unwrap() - 5.5).abs() < 0.001);
     }
 
@@ -336,7 +376,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(5))),
             Box::new(Expression::Literal(Value::Int(5))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     #[test]
@@ -345,7 +385,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(5))),
             Box::new(Expression::Literal(Value::Int(6))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(false));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(false));
     }
 
     #[test]
@@ -354,7 +394,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(5))),
             Box::new(Expression::Literal(Value::Int(6))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     #[test]
@@ -363,7 +403,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(3))),
             Box::new(Expression::Literal(Value::Int(5))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     #[test]
@@ -372,7 +412,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(5))),
             Box::new(Expression::Literal(Value::Int(3))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(false));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(false));
     }
 
     #[test]
@@ -381,7 +421,7 @@ mod tests {
             Box::new(Expression::Literal(Value::Int(5))),
             Box::new(Expression::Literal(Value::Int(5))),
         );
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(true));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(true));
     }
 
     // ── function calls ───────────────────────────────────────────────
@@ -395,7 +435,7 @@ mod tests {
                 Expression::Literal(Value::Int(20)),
             ],
         };
-        assert_eq!(e.eval(&state()).unwrap(), Value::Int(15));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Int(15));
     }
 
     #[test]
@@ -406,7 +446,7 @@ mod tests {
                 Expression::Literal(Value::String("any".into())),
             ],
         };
-        assert_eq!(e.eval(&state()).unwrap(), Value::Bool(false));
+        assert_eq!(e.eval(&EvalContext::new(&state())).unwrap(), Value::Bool(false));
     }
 
     // ── Expression::PartialEq ────────────────────────────────────────
@@ -418,6 +458,102 @@ mod tests {
         assert_eq!(a, b);
         let c = Expression::Literal(Value::Int(2));
         assert_ne!(a, c);
+    }
+
+    // ── visited / count / has_tag tests ───────────────────────────────
+
+    #[test]
+    fn visited_when_not_visited() {
+        let state = state();
+        let e = Expression::Call {
+            name: "visited".into(),
+            args: vec![Expression::Literal(Value::String("cave".into()))],
+        };
+        assert_eq!(
+            e.eval(&EvalContext::new(&state)).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn visited_after_visit() {
+        let mut state = state();
+        state.mark_visited(&"cave".to_string());
+        let e = Expression::Call {
+            name: "visited".into(),
+            args: vec![Expression::Literal(Value::String("cave".into()))],
+        };
+        assert_eq!(
+            e.eval(&EvalContext::new(&state)).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn count_zero_when_not_visited() {
+        let state = state();
+        let e = Expression::Call {
+            name: "count".into(),
+            args: vec![Expression::Literal(Value::String("cave".into()))],
+        };
+        assert_eq!(
+            e.eval(&EvalContext::new(&state)).unwrap(),
+            Value::Int(0)
+        );
+    }
+
+    #[test]
+    fn count_after_multiple_visits() {
+        let mut state = state();
+        state.mark_visited(&"cave".to_string());
+        state.mark_visited(&"cave".to_string());
+        state.mark_visited(&"cave".to_string());
+        let e = Expression::Call {
+            name: "count".into(),
+            args: vec![Expression::Literal(Value::String("cave".into()))],
+        };
+        assert_eq!(
+            e.eval(&EvalContext::new(&state)).unwrap(),
+            Value::Int(3)
+        );
+    }
+
+    #[test]
+    fn has_tag_with_graph_context() {
+        use crate::passage::{PassageGraph, PassageNode};
+        let mut state = state();
+        state.current_passage = Some("intro".to_string());
+
+        let graph = PassageGraph {
+            nodes: vec![
+                PassageNode {
+                    id: "intro".to_string(),
+                    tags: vec!["opening".to_string(), "safe".to_string()],
+                    body: vec![],
+                    scripts: vec![],
+                    hooks: vec![],
+                },
+            ],
+            edges: vec![],
+        };
+
+        let e = Expression::Call {
+            name: "has_tag".into(),
+            args: vec![Expression::Literal(Value::String("opening".into()))],
+        };
+        assert_eq!(
+            e.eval(&EvalContext::with_graph(&state, &graph)).unwrap(),
+            Value::Bool(true)
+        );
+
+        let e2 = Expression::Call {
+            name: "has_tag".into(),
+            args: vec![Expression::Literal(Value::String("danger".into()))],
+        };
+        assert_eq!(
+            e2.eval(&EvalContext::with_graph(&state, &graph)).unwrap(),
+            Value::Bool(false)
+        );
     }
 }
 
