@@ -18,21 +18,17 @@ type PResult<'a, O> = winnow::Result<O, ContextError>;
 
 // ── public entry point ───────────────────────────────────────────────────
 
-/// Parse a passage body string into `(nodes, diagnostics)`.
 pub fn parse_inline(source: &str) -> (Vec<ContentNode>, Vec<Diagnostic>) {
     let mut diagnostics = Vec::new();
     let nodes = match parse_inline_nodes(&mut diagnostics).parse(source) {
         Ok(n) => n,
         Err(_) => Vec::new(),
     };
-
-
     (nodes, diagnostics)
 }
 
 // ── shared types ─────────────────────────────────────────────────────────
 
-/// Unifies output types for `alt` combinator — all parsers produce this.
 #[derive(Debug)]
 enum InlineItem {
     Node(ContentNode),
@@ -41,15 +37,12 @@ enum InlineItem {
 
 // ── top-level: repeated node parsing ─────────────────────────────────────
 
-/// Parse a sequence of inline nodes. Uses `alt` for backtracking; `parse_text`
-/// is the final fallback, so this always succeeds.
 fn parse_inline_nodes<'a>(
     diagnostics: &'a mut Vec<Diagnostic>,
 ) -> impl Parser<&'a str, Vec<ContentNode>, ContextError> + 'a {
     move |input: &mut &'a str| {
         let mut nodes = Vec::new();
         while !input.is_empty() {
-            // alt tries each parser once per token; text fallback ensures success
             let item = alt((
                 parse_link.map(InlineItem::Node),
                 parse_comment.map(|_| InlineItem::Skip),
@@ -62,7 +55,6 @@ fn parse_inline_nodes<'a>(
                 Ok(InlineItem::Node(n)) => {
                     if let ContentNode::Text(ref s) = n {
                         if s.is_empty() {
-                            // Safety valve: skip current char
                             if let Some(c) = input.chars().next() {
                                 *input = &input[c.len_utf8()..];
                             }
@@ -72,22 +64,17 @@ fn parse_inline_nodes<'a>(
                 }
                 Ok(InlineItem::Skip) => {}
                 Err(_) => {
-                    // Error recovery: skip one char
                     if let Some(c) = input.chars().next() {
                         *input = &input[c.len_utf8()..];
                     }
                 }
             }
         }
-        // Post-process: scan for orphan {else}/{end} to emit diagnostics
-        // (these appear as Text nodes from parse_text fallback)
         add_standalone_block_diagnostics(&nodes, diagnostics);
         Ok(nodes)
     }
 }
 
-/// Detect orphan {{else}}/{{end}} markers that were parsed as text
-/// (because parse_directive didn't match them) and emit diagnostics.
 fn add_standalone_block_diagnostics(
     nodes: &[ContentNode],
     diagnostics: &mut Vec<Diagnostic>,
@@ -115,7 +102,6 @@ fn add_standalone_block_diagnostics(
 
 // ── text ─────────────────────────────────────────────────────────────────
 
-/// Consume text until the next special character (`[`, `{`, `<`, `/`).
 fn parse_text<'a>(input: &mut &'a str) -> PResult<'a, &'a str> {
     take_till(1.., |c: char| c == '[' || c == '{' || c == '<' || c == '/')
         .parse_next(input)
@@ -123,7 +109,6 @@ fn parse_text<'a>(input: &mut &'a str) -> PResult<'a, &'a str> {
 
 // ── comment ──────────────────────────────────────────────────────────────
 
-/// Skip a line comment (`// ...`) or block comment (`<!-- -->`).
 fn parse_comment<'a>(input: &mut &'a str) -> PResult<'a, ()> {
     alt((
         preceded("//", take_till(0.., |c: char| c == '\n')).void(),
@@ -132,13 +117,35 @@ fn parse_comment<'a>(input: &mut &'a str) -> PResult<'a, ()> {
     .parse_next(input)
 }
 
+// ── link condition ───────────────────────────────────────────────────────
+
+fn parse_link_condition<'a>(input: &mut &'a str) -> PResult<'a, Option<Expression>> {
+    let cond = opt(preceded(
+        "{if:",
+        terminated(
+            take_till(0.., |c: char| c == '}'),
+            '}',
+        ),
+    ))
+    .parse_next(input)?;
+
+    match cond {
+        Some(expr_str) => {
+            let expr_str = expr_str.trim();
+            match crate::expression::parse_expression(expr_str) {
+                Ok(expr) => Ok(Some(expr)),
+                Err(_) => Ok(None),
+            }
+        }
+        None => Ok(None),
+    }
+}
+
 // ── link ─────────────────────────────────────────────────────────────────
 
-/// Parse `[[label -> target]]` or `[[label → target]]`.
 fn parse_link<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     let _ = "[[".parse_next(input)?;
 
-    // label: everything up to arrow or `]]`
     let label = take_till(1.., |c: char| c == '-' || c == '\u{2192}' || c == ']')
         .map(|s: &str| s.trim().to_string())
         .parse_next(input)?;
@@ -146,31 +153,28 @@ fn parse_link<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
         return Err(ContextError::new());
     }
 
-    // Arrow: `->` or `→`
     let _ = alt(("->", "\u{2192}")).parse_next(input)?;
 
-    // target: everything up to `]]`
-    let target = take_till(1.., |c: char| c == ']')
+    let target = take_till(1.., |c: char| c == ']' || c == '{')
         .map(|s: &str| s.trim().to_string())
         .parse_next(input)?;
     if target.is_empty() {
         return Err(ContextError::new());
     }
 
+    let enabled_if = parse_link_condition.parse_next(input)?;
+
     let _ = "]]".parse_next(input)?;
 
     Ok(ContentNode::Link {
         label,
         target,
-        enabled_if: None,
+        enabled_if,
     })
 }
 
-// ── directive dispatch — closure-based to capture diagnostics ──────────────
+// ── directive dispatch ───────────────────────────────────────────────────
 
-/// Parse a `{name: args}` or `{name}` directive. Returns backtrack error
-/// if the input doesn't start with `{`. For `{else}`/`{end}`, fails with backtrack
-/// so `alt` can try text fallback; diagnostics are handled by post-processing.
 fn parse_directive_pure<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     let _ = '{'.parse_next(input)?;
 
@@ -183,7 +187,6 @@ fn parse_directive_pure<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     match name.as_str() {
         "if" => parse_if_block.parse_next(input),
         "else" | "end" => {
-            // Consume these as text — post-process will emit diagnostics
             Ok(ContentNode::Text(name))
         }
         _ => {
@@ -199,7 +202,6 @@ fn parse_directive_pure<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     }
 }
 
-/// Dispatch a non-if directive by name.
 fn dispatch_directive(name: &str, args_str: &str) -> ContentNode {
     match name {
         "state" => parse_state_directive(args_str),
@@ -216,8 +218,13 @@ fn dispatch_directive(name: &str, args_str: &str) -> ContentNode {
     }
 }
 
-// ── conditional block {if: expr} ... {else} ... {end} ───────────────────
+// ── conditional block ────────────────────────────────────────────────────
 
+/// Parse `{if: expr} body {else} alt_body {end}`.
+///
+/// Parses the condition expression, then delegates to `scan_conditional_body`
+/// to split the body into then/else branches. Each branch is recursively parsed
+/// with `parse_inline`.
 fn parse_if_block<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     let condition_str = if input.starts_with('}') {
         String::new()
@@ -246,8 +253,6 @@ fn parse_if_block<'a>(input: &mut &'a str) -> PResult<'a, ContentNode> {
     })
 }
 
-/// Scan forward to find matching `{else}` / `{end}` at the current
-/// conditional nesting level. Returns `(then_text, else_text)`.
 fn scan_conditional_body<'a>(
     input: &mut &'a str,
 ) -> PResult<'a, (&'a str, Option<&'a str>)> {
@@ -271,7 +276,6 @@ fn scan_conditional_body<'a>(
             }
             let keyword = std::str::from_utf8(&bytes[k_start..k_end]).unwrap_or("");
 
-            // Find closing `}`, handling nested braces
             let mut j = k_end;
             let mut inner_brace = 0;
             while j < bytes.len() {
@@ -319,7 +323,6 @@ fn scan_conditional_body<'a>(
         pos += 1;
     }
 
-    // No {end} found — consume rest as then-text
     let then_text = *input;
     *input = &original[original.len()..];
     Ok((then_text, None))
@@ -514,6 +517,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_link_with_condition() {
+        let (nodes, diags) = parse_inline("[[Fight -> battle {if: $hp > 0}]]");
+        assert!(diags.is_empty());
+        assert_eq!(nodes.len(), 1);
+        match &nodes[0] {
+            ContentNode::Link { label, target, enabled_if } => {
+                assert_eq!(label, "Fight");
+                assert_eq!(target, "battle");
+                assert!(enabled_if.is_some(), "expected enabled_if to be Some, got None");
+            }
+            other => panic!("expected Link, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_link_without_condition() {
+        let (nodes, diags) = parse_inline("[[Enter -> dungeon]]");
+        assert!(diags.is_empty());
+        match &nodes[0] {
+            ContentNode::Link { enabled_if, .. } => {
+                assert!(enabled_if.is_none(), "expected None enabled_if");
+            }
+            other => panic!("expected Link, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn parse_state_interp() {
         let (nodes, diags) = parse_inline(r#"{state: "player.hp"}"#);
         assert!(diags.is_empty());
@@ -701,5 +731,4 @@ mod tests {
         assert!(matches!(nodes[0], ContentNode::Conditional { .. }));
         assert!(matches!(nodes[1], ContentNode::StateInterp { .. }));
     }
-
 }

@@ -14,8 +14,11 @@
 - [x] `pathos-parser`：多格式解析框架（`FormatParser` trait + `FormatRegistry` 按扩展名自动分发；TOML 格式完整实现含测试）
 - [x] `pathos-parser`：`.pathos` 格式四遍解析（P1 分段 → P2 块解析 → P3 行内解析 → P4 语义分析）
 - [x] `pathos-parser`：`@hook:` directive + fenced code block（含 language tag）解析
-- [x] `pathos-parser`：`{if:}`、`{ai:}`、`{ai-stream:}`、`{ai-cached:}`、`{state:}`、`{display:}`、`{set:}` 行内指令解析
+- [x] `pathos-parser`：行内指令解析 — `{state:}` / `{display:}` / `{set:}` / `{ai:}` / `{ai-stream:}` / `{ai-cached:}`（含 `|` fallback 分割）
+- [x] `pathos-parser`：行内指令解析 — `{name: args}` 通用宏解析（`split_args` 含深度追踪、`KeyValue` + `Positional` 参数解析）
+- [x] `pathos-parser`：行内注释剥离（`//` 单行 + `<!-- -->` 块注释在 P3 行内层面完成）
 - [x] `pathos-parser`：`[[link]]` 链接解析（含 `->` 和 `→` 两种箭头写法）
+- [x] `pathos-parser`：`Link.enabled_if` 条件链接解析（Phase 2 补齐完成）
 - [x] `pathos-render`：`RenderBackend` trait 定义 + `MockBackend` 实现
 - [x] `pathos-tui`：Ratatui 终端渲染器（`TuiBackend` 实现 `RenderBackend`，含完整事件循环）
 - [x] `pathos-cli`：`pathos run`（交互式运行）+ `pathos check`（静态诊断检查）
@@ -28,12 +31,25 @@
 | 测试套件 | 数量 | 状态 |
 |---|---|---|
 | `pathos-core` 单元测试 | 58 | ✅ 全过 |
-| `pathos-parser` 测试 | 24 | ✅ 全过 |
+| `pathos-parser` 测试 | 66 | ✅ 全过 |
 | `pathos-render` 测试 | 3 | ✅ 全过 |
 | 集成测试 | 6 | ✅ 全过（含超时守卫） |
 | 其它 crate 骨架测试 | 5 | ✅ 全过 |
 
-## Phase 2: 脚本与 LLM（预计 3–4 周）
+
+## Phase 2 — Parser 补齐
+
+`.pathos` 解析器已实现 4 遍流水线骨架。**P3 行内解析器已用 `winnow` 组合子重写**（符合架构 §3.2 / §10.1），使用 `alt` + `InlineItem` 枚举进行回溯，`parse_directive_pure` 处理指令分发，`scan_conditional_body` 处理嵌套深度追踪。所有 64 测试通过。剩余缺口：
+
+- [x] `pathos-parser`：`{if: expr} ... {else} ... {end}` 结构化条件块解析 — 使用 winnow 组合子重写 P3 inline 解析器，`parse_directive` → `parse_if_block` → `scan_conditional_body` 产出 `ContentNode::Conditional`当前 parser 将 `{if:}` 摊平为 `Macro` + `Text("{else}")` passthrough，不产出 `ContentNode::Conditional`。需实现 P3 层面的块级条件嵌套解析，产出 `Conditional { condition, then_branch, else_branch }`
+- [x] `pathos-parser`：`Link.enabled_if` 条件链接解析 — `[[label -> target {if: expr}]]` 语法，`parse_link_condition` 用 `opt(preceded(...))` 提取表达式，解析失败时优雅退化
+- [ ] `pathos-parser`：块层面注释剥离 — `parse_passage_block()` 在扫描行时剥离 `//` 和 `<!-- -->`，当前仅在 P3 行内层面处理
+- [ ] `pathos-parser`：`{if:}` 条件表达式解析器 — 实现架构 §5.4 定义的表达式求值器（字面量、运算符 `&&` / `||` / `!` / `==` / `!=` / `<` / `>` / `<=` / `>=`、`$path` 语法糖、`random()` / `has_tag()` / `visited()` / `count()` 函数调用）
+- [ ] `pathos-parser`：P4 语义分析扩展 — 验证 `{if:}` 内表达式的类型安全性、检查 `{display:}` 和链接的 passage 引用完整性、检测未使用的 passage
+- [ ] `pathos-parser`：快照测试（`insta`）— 每个语法特性至少 1 个快照，覆盖 happy path + 错误恢复路径（架构 §13 要求 ≥90% 覆盖率）
+- [x] `pathos-parser`：多语言脚本块解析完善（P2 阶段校验 `ScriptLang`，产出未知语言诊断）
+
+## Phase 2 — 脚本与 LLM（预计 3–4 周）
 
 - [x] `pathos-core`：Rhai 脚本 API 注册 — `state.get/set/inc/dec/delete`、`game_goto/restart/visited/count`、`random/random_float`、`Value` ↔ `Dynamic` 双向转换、`ScriptSignal` 导航中断协议（`NavInterrupt` 类型标记替代字符串匹配）
 - [x] `pathos-core`：`script.rs` → `scripts/` 模块拆分（`mod.rs` 公开接口 + `rhai_backend.rs` Rhai 专有实现，预留 `js.rs` / `lua.rs`）
